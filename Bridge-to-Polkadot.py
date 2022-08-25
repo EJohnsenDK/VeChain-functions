@@ -179,19 +179,106 @@ print('Response from Server: ' + str(send_transaction.content))
 #Output:
 #Response from Server: b'{"id":"0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f"}\n'
 
-response = CONNECTOR.replay_tx("0x8632d95b5eb26d709377a49e687f532da766108ef918243927bdd2593c0bb25a")
+response = CONNECTOR.replay_tx("0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f")
 print(response)
 #Output.
-#[{'data': '0x', 'events': [], 'transfers': [{'sender': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'recipient': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'amount': '0x3860e639d80640000'}], 'gasUsed': 0, 'reverted': False, 'vmError': ''}]
+#[{'data': '0x', 'events': [], 'transfers': [{'sender': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'recipient': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'amount': '0x246DDF97976680000'}], 'gasUsed': 0, 'reverted': False, 'vmError': ''}]
 
-Response from Server: b'{"id":"0x8632d95b5eb26d709377a49e687f532da766108ef918243927bdd2593c0bb25a"}\n'
+Response from Server: b'{"id":"0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f"}\n'
 
 #---------------------------------------------------------------------------------------------------------
 # Transaction result
 #---------------------------------------------------------------------------------------------------------
 https://explore-testnet.vechain.org/transactions/0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f#info
+"Voila!
 
+#Fetch transaction result from blockchain:
+tx = requests.get(NODE_URL + '/transactions/0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f')
+print(tx)
+tx_data = tx.json()
+print(tx_data)
+
+Output:
+#{'id': '0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f', 'chainTag': 39, 'blockRef': '0x00c86169b6ec016a', 'expiration': 720, 'clauses': [{'to': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'value': '0x246ddf97976680000', 'data': '0x354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a'}], 'gasPriceCoef': 0, 'gas': 210000, 'origin': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'delegator': None, 'nonce': '0xbc614f', 'dependsOn': None, 'size': 176, 'meta': {'blockID': '0x00c861719fc3113f1e6e144bda37db670687ea3c0ac3cc845f4b2c0e5dc6ce0e', 'blockNumber': 13132145, 'blockTimestamp': 1661352800}}
+
+#Fetch block result from blockchain to ensure finality:
+blocknum = tx_data['meta']['blockNumber']
+block = requests.get(NODE_URL + '/blocks/' + str(blocknum))
+print(block)
+block_content = block.json()
+print(block_content)
+Output:
+{'number': 13132145, 'id': '0x00c861719fc3113f1e6e144bda37db670687ea3c0ac3cc845f4b2c0e5dc6ce0e', 'size': 858, 'parentID': '0x00c861707187c7a1cca7a49fa46cb289611805e5d3a77c0c452c7d8d5a24ea8a', 'timestamp': 1661352800, 'gasLimit': 30000000, 'beneficiary': '0xb4094c25f86d628fdd571afc4077f0d0196afb48', 'gasUsed': 747558, 'totalScore': 78401526, 'txsRoot': '0x6e574c2b7516b34f32203c8376600680773b0781549583556a9c4a0108049fda', 'txsFeatures': 1, 'stateRoot': '0xde0626d9263e3e750f5b4d095d6125a8c33b2acb418195dcebf536bdcef0d3c6', 'receiptsRoot': '0xc32f1ebd5679164415d113746c154ae5e095480de1bba28ebc890226091a2d03', 'com': True, 'signer': '0xd6fab81fd54b989655b42d51b0344ddcb5007a5a', 'isTrunk': True, 'isFinalized': True, 'transactions': ['0xe7562790a42de0cea3951fa8c7fc41d76507809c2243f4fd2971528fd009b5b7', '0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f', '0x1bf87f4cfef28b04f79ed21df1d8bc71ab3e13d5d3ed7436738851f448e9e8d6']}
+
+#---------------------------------------------------------------------------------------------------------
+#Wait until block is finalized - then secure data structure for database
+#---------------------------------------------------------------------------------------------------------
+if (block_content['isFinalized'] == True):
+  chainTag = tx_data['chainTag']
+  blockNum = tx_data['meta']['blockNumber']
+  blockID  = tx_data['meta']['blockID']
+  TxID     = tx_data['id']
+  sender   = tx_data['origin']  
+  clauses  = tx_data['clauses']
+  value    = clauses[0]['value']
+  amount   = int(value, base=16)/10**18        
+
+  receiver = clauses[0]['data']        
+  if receiver[:2] == '0x':
+     receiver = receiver[2:]
+     receiver_decoded = bytes.fromhex(receiver).decode('utf-8')
+     print(receiver)           
+     print(len(receiver_decoded), ' ', receiver_decoded)
+
+  print('chainTag: ', chainTag)
+  print('blockNum: ', blockNum)
+  print('blockID : ', blockID) 
+  print('TxID    : ', TxID)    
+  print('sender  : ', sender)  
+  print('amount  : ', amount)  
+  print('receiver: ', receiver)
+
+#---------------------------------------------------------------------------------------------------------	
+#Using a Google sheet as database mockup
+#---------------------------------------------------------------------------------------------------------
+from pyasn1_modules.rfc5208 import Attributes
+from google.colab import auth
+auth.authenticate_user()
+
+import gspread
+from google.auth import default
+creds, _ = default()
+
+gc = gspread.authorize(creds)
+
+#-------------------------------------------------------------------------------------------------------------	
+# Open our new sheet and add some data - create one yourself and get key from URL, then name a worksheet #Txs"
+#-------------------------------------------------------------------------------------------------------------	
+JUR_gs = gc.open_by_key('1hkQnl4cyrk5ARC2onffz9UTBbfl-Nsu_Ul1O9tC1JWI')
+JUR_ws = JUR_gs.worksheet("Txs")
+
+print(JUR_ws.spreadsheet.id)
+print(JUR_ws.spreadsheet.title)
+
+JUR_ws = JUR_gs.worksheet("Txs")
+
+#-------------------------------------------------------------------------------------------------------------	
+#Fill in data in Google sheet
+#-------------------------------------------------------------------------------------------------------------	          
+cells = 'B' + str(row_start) + ':H' + str(row_start)
+print(cells)
+JUR_ws.update(cells,[[chainTag,
+		      blockNum,
+		      blockID,
+		      "TRUE"
+		      TxID,
+		      sender,
+		      amount,
+		      receiver]])          
+	
 #Voila!
+
+
 Footer
 © 2022 GitHub, Inc.
 Footer navigation
