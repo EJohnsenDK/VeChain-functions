@@ -95,7 +95,8 @@ tokens = r.json()
 Checking balances of token holder's wallet:
 #---------------------------------------------------------------------------------------------------------
 #VET being native coin has own function
-CONNECTOR.get_vet_balance(WALLET_ADD)
+VET_bal = CONNECTOR.get_vet_balance(address_th)
+print('VET : ', int(VET_bal)/10**18)
 
 balance_clauses = [ CONNECTOR.clause(ERC20_CONTRACT, 'balanceOf', [address_th], token['address']) for token in tokens]
 results = CONNECTOR.call_multi(address_th, balance_clauses)
@@ -103,8 +104,15 @@ assert len(results) == len(tokens)
 balances = [int(x['decoded']['0']) for x in results]
 for token, balance in zip(tokens, balances):
   if (token["symbol"] == "VTHO"):
-    print(f'{token["symbol"]}: {balance}')
+    print(f'{token["symbol"]}: {int(balance)/10**18}')
     
+#Amount of tokens to be bridged
+VET_sending = 55.5
+assert VET_sending <= VET_bal
+
+VET_tx = int(VET_sending * 10**18)
+print(VET_tx)
+
 #---------------------------------------------------------------------------------------------------------
 Setting up receiving wallet address on the Polkadot blockchain
 #---------------------------------------------------------------------------------------------------------    
@@ -121,16 +129,16 @@ assert Wallet_polkadot_receiver == Wallet_polkadot_receiver_decoded
 #'5GTAHGPnMLpz3cuWe9omkW5eGBk2uUMhHEm8tkJpKamaBBuj'
 
 #---------------------------------------------------------------------------------------------------------
-Building VeChain transaction
+#Building VeChain transaction
 #---------------------------------------------------------------------------------------------------------    
 body = {
     "chainTag": 39, # chainTag 39 = testnet,  see: https://docs.vechain.org/others/#network-identifier for more details
-    "blockRef": '0x00c86110816551d2', # to get latest blockRef: https://docs.vechain.org/thor/learn/transaction-model.html#model
+    "blockRef": '0x00c7c9a82cf31351', # to get latest blockRef: https://docs.vechain.org/thor/learn/transaction-model.html#model
     "expiration": 720, # blockref + expiration = blocknumber where TX expires
     "clauses": [  # here the clause section starts
         {
             "to": address_sc, # destination of vet
-            "value": 42000000000000000000, # how much vet will be send. Vet has 18 decimals, so this equals to 42 vet.
+            "value": VET_tx, # how much vet will be send. Vet has 18 decimals
             "data": '0x' + WPR_HEX # Address of receiving wallet on the Polkadot blockchain after bridging
         }
     ],
@@ -141,8 +149,16 @@ body = {
 }
 
 print(body)
+#---------------------------------------------------------------------------------------------------------
+# Create the transaction
+#---------------------------------------------------------------------------------------------------------
+
+from thor_devkit import cry, transaction
+# Construct an unsigned transaction.
+tx = transaction.Transaction(body)
+
 #Output:
-#{'chainTag': 39, 'blockRef': '0x00c86169b6ec016a', 'expiration': 720, 'clauses': [{'to': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'value': 42000000000000000000, 'data': '0x354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a'}], 'gasPriceCoef': 0, 'gas': 210000, 'dependsOn': None, 'nonce': 12345679}
+#{'chainTag': 39, 'blockRef': '0x00c88a23fb1229bc', 'expiration': 720, 'clauses': [{'to': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'value': 55500000000000000000, 'data': '0x354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a'}], 'gasPriceCoef': 0, 'gas': 210000, 'dependsOn': None, 'nonce': 12345679}
 
 #---------------------------------------------------------------------------------------------------------
 # Sign the transaction with the private key.
@@ -153,11 +169,12 @@ signature = cry.secp256k1.sign(message_hash, priv_key)
 
 # Set the signature on the transaction.
 tx.set_signature(signature)
+tx_ID = tx.get_id()
 
-print('Created a transaction from ' + tx.get_origin() + ' to 0x0000000000000000000000000000000000000000 with TXID: ' + tx.get_id() + '.')
+print('Created a transaction from ' + tx.get_origin() + ' to ', address_sc, ' with TXID: ' + tx_ID + '.')
 print('')
 #Output:
-#Created a transaction from 0x4271530dac4cc2f34c240e1dbed6c81885c290a0 to 0x0000000000000000000000000000000000000000 with TXID: 0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f.
+#Created a transaction from 0x4271530dac4cc2f34c240e1dbed6c81885c290a0 to  0xd042a9d3f6648f0a803e230c8b998ca02c94cea1  with TXID: 0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2.
 
 encoded_bytes = tx.encode()
 
@@ -165,7 +182,7 @@ encoded_bytes = tx.encode()
 print('The transaction "0x' + encoded_bytes.hex() + '" will be send to the testnet node now.')
 
 #Output:
-#The transaction "0xf8ae2787c86169b6ec016a8202d0f852f85094d042a9d3f6648f0a803e230c8b998ca02c94cea1890246ddf97976680000b0354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a80830334508083bc614fc0b841abf818757f4e0309222e7d44638755798fd04153866c95c9323da79f77d2f52952c87170e268fa67434c2ee575983c5a455cb4920892cc9ab4a7f5c92107bc5901" will be send to the testnet node now.
+#The transaction "0xf8ae2787c88a23fb1229bc8202d0f852f85094d042a9d3f6648f0a803e230c8b998ca02c94cea1890302379bf2ca2e0000b0354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a80830334508083bc614fc0b84129a916dccea79c8fb777322eb9908d833b263c7deaf4474b14660b58830acd8249b6da7bd042678a070678df448c68fe988892c68ba34384db5f5dab6c5684b400" will be send to the testnet node now.
 
 #---------------------------------------------------------------------------------------------------------
 # Send the transaction
@@ -177,29 +194,31 @@ send_transaction = requests.post('https://testnet.veblocks.net/transactions', js
 
 print('Response from Server: ' + str(send_transaction.content))
 #Output:
-#Response from Server: b'{"id":"0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f"}\n'
+#Response from Server: b'{"id":"0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2"}\n'
 
-response = CONNECTOR.replay_tx("0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f")
+response = CONNECTOR.replay_tx(tx_ID)
 print(response)
 #Output.
-#[{'data': '0x', 'events': [], 'transfers': [{'sender': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'recipient': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'amount': '0x246DDF97976680000'}], 'gasUsed': 0, 'reverted': False, 'vmError': ''}]
+#[{'data': '0x', 'events': [], 'transfers': [{'sender': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'recipient': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'amount': '0x302379bf2ca2e0000'}], 'gasUsed': 0, 'reverted': False, 'vmError': ''}]
 
-Response from Server: b'{"id":"0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f"}\n'
-
+print(tx_ID)
+#Output: 0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2
 #---------------------------------------------------------------------------------------------------------
 # Transaction result
 #---------------------------------------------------------------------------------------------------------
-https://explore-testnet.vechain.org/transactions/0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f#info
-"Voila!
+#https://explore-testnet.vechain.org/transactions/0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f#info
+#"Voila!
 
+#---------------------------------------------------------------------------------------------------------
 #Fetch transaction result from blockchain:
-tx = requests.get(NODE_URL + '/transactions/0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f')
+#---------------------------------------------------------------------------------------------------------
+tx = requests.get(NODE_URL + '/transactions/' + tx_ID)
 print(tx)
 tx_data = tx.json()
 print(tx_data)
 
-Output:
-#{'id': '0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f', 'chainTag': 39, 'blockRef': '0x00c86169b6ec016a', 'expiration': 720, 'clauses': [{'to': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'value': '0x246ddf97976680000', 'data': '0x354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a'}], 'gasPriceCoef': 0, 'gas': 210000, 'origin': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'delegator': None, 'nonce': '0xbc614f', 'dependsOn': None, 'size': 176, 'meta': {'blockID': '0x00c861719fc3113f1e6e144bda37db670687ea3c0ac3cc845f4b2c0e5dc6ce0e', 'blockNumber': 13132145, 'blockTimestamp': 1661352800}}
+#Output:
+#{'id': '0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2', 'chainTag': 39, 'blockRef': '0x00c88a23fb1229bc', 'expiration': 720, 'clauses': [{'to': '0xd042a9d3f6648f0a803e230c8b998ca02c94cea1', 'value': '0x302379bf2ca2e0000', 'data': '0x354754414847506e4d4c707a3363755765396f6d6b57356547426b3275554d6848456d38746b4a704b616d614242756a'}], 'gasPriceCoef': 0, 'gas': 210000, 'origin': '0x4271530dac4cc2f34c240e1dbed6c81885c290a0', 'delegator': None, 'nonce': '0xbc614f', 'dependsOn': None, 'size': 176, 'meta': {'blockID': '0x00c88a2e0968555584883189cf684da83d4814319364ade90d0824fc89462508', 'blockNumber': 13142574, 'blockTimestamp': 1661457090}}
 
 #Fetch block result from blockchain to ensure finality:
 blocknum = tx_data['meta']['blockNumber']
@@ -207,11 +226,24 @@ block = requests.get(NODE_URL + '/blocks/' + str(blocknum))
 print(block)
 block_content = block.json()
 print(block_content)
-Output:
-{'number': 13132145, 'id': '0x00c861719fc3113f1e6e144bda37db670687ea3c0ac3cc845f4b2c0e5dc6ce0e', 'size': 858, 'parentID': '0x00c861707187c7a1cca7a49fa46cb289611805e5d3a77c0c452c7d8d5a24ea8a', 'timestamp': 1661352800, 'gasLimit': 30000000, 'beneficiary': '0xb4094c25f86d628fdd571afc4077f0d0196afb48', 'gasUsed': 747558, 'totalScore': 78401526, 'txsRoot': '0x6e574c2b7516b34f32203c8376600680773b0781549583556a9c4a0108049fda', 'txsFeatures': 1, 'stateRoot': '0xde0626d9263e3e750f5b4d095d6125a8c33b2acb418195dcebf536bdcef0d3c6', 'receiptsRoot': '0xc32f1ebd5679164415d113746c154ae5e095480de1bba28ebc890226091a2d03', 'com': True, 'signer': '0xd6fab81fd54b989655b42d51b0344ddcb5007a5a', 'isTrunk': True, 'isFinalized': True, 'transactions': ['0xe7562790a42de0cea3951fa8c7fc41d76507809c2243f4fd2971528fd009b5b7', '0xe30bfcd1c3b69e5ab10611f125bfa543300f825338c1011ba25404729dd6024f', '0x1bf87f4cfef28b04f79ed21df1d8bc71ab3e13d5d3ed7436738851f448e9e8d6']}
+#Output:
+#{'number': 13142574, 'id': '0x00c88a2e0968555584883189cf684da83d4814319364ade90d0824fc89462508', 'size': 858, 'parentID': '0x00c88a2d4793ed8269bda0db578a766a3314071fd1832ad62d74fcc16aa918bb', 'timestamp': 1661457090, 'gasLimit': 30000000, 'beneficiary': '0xb4094c25f86d628fdd571afc4077f0d0196afb48', 'gasUsed': 747494, 'totalScore': 78547532, 'txsRoot': '0x96e6f701cc85d67981c2e4a9441c967b438145103c2e1ffc3d853e897660569f', 'txsFeatures': 1, 'stateRoot': '0x4eb69e580db3f82b5d7747b5f1235dd6b46a39618404f2b8895f8d6b8773f2af', 'receiptsRoot': '0xc874050d95a17809bffb4dc9ad22664dbdf29b6de35adddd709bcee4e2d5c0e7', 'com': True, 'signer': '0x39218d415dc252a50823a3f5600226823ba4716e', 'isTrunk': True, 'isFinalized': False, 'transactions': ['0xcc2b6d593a756f2fb1948e00b39e6761309691fd6680d7c1f5a648bdeb0abf45', '0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2', '0x29daabb409f4a6ce99505153fd194fd9d60ec77470bf6ec61263d3bbd54467fa']}
 
 #---------------------------------------------------------------------------------------------------------
-#Wait until block is finalized - then secure data structure for database
+#Wait until block is finalized 
+#---------------------------------------------------------------------------------------------------------
+import time
+
+finalized = False
+while (finalized == False):  
+  if block_content['isFinalized'] == True:
+    finalized = True
+  else:  
+    print("Waiting 5 more secs")
+    time.sleep(5) #waits 5s for preformance
+	
+#---------------------------------------------------------------------------------------------------------
+#Secure data structure for database
 #---------------------------------------------------------------------------------------------------------
 if (block_content['isFinalized'] == True):
   chainTag = tx_data['chainTag']
@@ -270,8 +302,8 @@ print(cells)
 JUR_ws.update(cells,[[chainTag,
 		      blockNum,
 		      blockID,
-		      "TRUE"
-		      TxID,
+		      "TRUE",
+		      Tx_ID,
 		      sender,
 		      amount,
 		      receiver]])          
