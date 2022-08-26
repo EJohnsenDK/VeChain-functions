@@ -1,0 +1,183 @@
+#This program simulates second part of a token bridge from VeChain to Polkadot, by sending VET from one wallet to another. 
+#Sending wallet is a token holder's wallet
+#Receiving wallet is VeChain part of a 'smart contract' that together with other functions bridges the tokens to a Polkadot version, 
+#with information about which wallet on Polkadot that has to receive the bridged tokens.
+
+#Creates a couple of VeChain wallets and send tokens from one to the other: 
+
+#First we need to install the VeChain Thor request library: https://pypi.org/project/thor-requests/0.1.2/
+pip3 install -U thor-requests
+pip3 install py-substrate-api
+pip3 install substrate-interface
+
+#Some imports:
+from substrateinterface import SubstrateInterface
+from substrateinterface import SubstrateInterface, Keypair
+from substrateinterface.exceptions import SubstrateRequestException
+from thor_requests.wallet import Wallet
+from thor_requests.connect import Connect
+from thor_requests.contract import Contract
+from thor_devkit import cry
+from thor_devkit.cry import mnemonic
+from thor_devkit.cry import hdnode
+import requests
+import binascii
+import os
+
+#---------------------------------------------------------------------------------------------------------
+#Initial environment setup
+#---------------------------------------------------------------------------------------------------------
+VeChain 'smart contract' wallet on testnet:
+walletSC_address = "0xd042a9d3f6648f0a803e230c8b998ca02c94cea1"
+
+#Polkadot 'smart contract' wallet on testnet Westend
+keypair = Keypair.create_from_mnemonic('sound family escape embrace blanket solution brief knock verb bench record vote')
+
+#Connecting to VeChain testnet:
+NODE_URL     = "https://sync-testnet.vechain.org" # node connection
+CONNECTOR      = Connect(NODE_URL)
+
+#Connecting to Polkadot testnet - Westend:
+substrate = SubstrateInterface(
+    url="wss://westend-rpc.polkadot.io",
+    ss58_format=42,
+    type_registry_preset='westend'
+)
+#---------------------------------------------------------------------------------------------------------
+
+
+#---------------------------------------------------------------------------------------------------------
+# Function to verify VeChain onchain data
+#---------------------------------------------------------------------------------------------------------
+def control_vechain_data():
+  print('BlockNum_ws: ', BlockNum_ws) 
+  block = requests.get(NODE_URL + '/blocks/' + str(BlockNum_ws))  
+  print(block)
+  block_content = block.json()
+  print(block_content)
+  print(block_content['id'])
+  #Output:
+  #{'number': 13142574, 'id': '0x00c88a2e0968555584883189cf684da83d4814319364ade90d0824fc89462508', 'size': 858, 'parentID': '0x00c88a2d4793ed8269bda0db578a766a3314071fd1832ad62d74fcc16aa918bb', 'timestamp': 1661457090, 'gasLimit': 30000000, 'beneficiary': '0xb4094c25f86d628fdd571afc4077f0d0196afb48', 'gasUsed': 747494, 'totalScore': 78547532, 'txsRoot': '0x96e6f701cc85d67981c2e4a9441c967b438145103c2e1ffc3d853e897660569f', 'txsFeatures': 1, 'stateRoot': '0x4eb69e580db3f82b5d7747b5f1235dd6b46a39618404f2b8895f8d6b8773f2af', 'receiptsRoot': '0xc874050d95a17809bffb4dc9ad22664dbdf29b6de35adddd709bcee4e2d5c0e7', 'com': True, 'signer': '0x39218d415dc252a50823a3f5600226823ba4716e', 'isTrunk': True, 'isFinalized': False, 'transactions': ['0xcc2b6d593a756f2fb1948e00b39e6761309691fd6680d7c1f5a648bdeb0abf45', '0x9c5e4bdb227ab68293cc9d1ca98e206602623836ac54c2146f4e669d91aa54f2', '0x29daabb409f4a6ce99505153fd194fd9d60ec77470bf6ec61263d3bbd54467fa']}
+
+  assert block_content['id'] == BlockID_ws
+  assert block_content['isFinalized'] == True
+
+  transactions = block_content['transactions']
+  #print(transactions)
+  #print(len(transactions))
+
+  for j in range(0, len(transactions)):
+      #print(transactions[j])   
+      tx = requests.get(NODE_URL + '/transactions/' + transactions[j])      
+      if tx.status_code == 200:
+        #print(tx)
+        tx_content = tx.json()              
+        clauses = tx_content['clauses']
+        #print('#clauses: ', len(clauses))
+
+        for k in range(0, len(clauses)):
+          if clauses[k]['to'] == walletSC_address:            
+            sender = tx_content['origin']           
+            #print(i, j, k, tx_content)
+            #print(clauses)
+            value_VC = clauses[k]['value']            
+            amount_VC = int(value_VC, base=16)/10**18
+            print(amount_VC, ' ', Amount_ws)            
+            receiver = clauses[k]['data']
+            #print('receiver: ', receiver)            
+            assert tx_content['id'] == TxID_ws
+            assert sender == Sender_ws
+            assert float(amount_VC) == float(Amount_ws)
+
+            if receiver[:2] == '0x':
+               receiver = receiver[2:]
+               receiver_decoded = bytes.fromhex(receiver).decode('utf-8')
+               #print(receiver)           
+               #print(len(receiver_decoded), ' ', receiver_decoded)
+               receiver_decoded_ws = bytes.fromhex(Receiver_ws).decode('utf-8')
+               assert receiver_decoded == receiver_decoded_ws
+
+#---------------------------------------------------------------------------------------------------------
+# Function to check 'smart contract' holds enough tokens for bridge transaction
+#---------------------------------------------------------------------------------------------------------
+def check_WND_holding():
+  global WND_needed
+  #Amount of WND in 'smart contract' account 
+  result = substrate.query(
+    module='System',
+    storage_function='Account',
+    params=['5DnX4oecWs7PxwB5B77RJ2epBf9dYmEv8eX2M91iBpt3JbqG'])
+
+  WND_holding = result.value['data']['free']/10**12
+  WND_needed  = float(Amount_ws)/10**3
+  print('WND_holding: ', WND_holding) 
+  print('WND_needed : ', WND_needed)
+  assert WND_holding >= WND_needed                
+  
+  
+#---------------------------------------------------------------------------------------------------------
+# Function to create transaction from 'smart contract' wallet to Tokens holder's selected wallet on Polkadot 
+#---------------------------------------------------------------------------------------------------------
+def create_Polkadot_tx():
+
+  # Set block_hash to None for chaintip
+  block_hash = None
+  #block_hash = "0x8f5074dfc5deff54eadf01c2923810434b9eb73d12272e542a06c4aae31f694d"
+  block_number = "12326655" #https://polkadot.js.org/apps/?rpc=wss%3A%2F%2Fwestend.api.onfinality.io%2Fpublic-ws#/explorer?rpc=ws://localhost:9944
+
+  header = substrate.get_block_header(block_number=block_number)
+  print(header)
+
+  # Retrieve extrinsics in block
+  #result = substrate.get_block(block_hash=block_hash)
+  result = substrate.get_block(block_number=block_number)
+
+  print(result)
+
+  call = substrate.compose_call(
+  call_module='Balances',
+  call_function='transfer',
+  call_params={'dest': '5GTAHGPnMLpz3cuWe9omkW5eGBk2uUMhHEm8tkJpKamaBBuj',
+               'value': WND_needed * 10**12}
+  )
+
+  extrinsic = substrate.create_signed_extrinsic(call=call, keypair=keypair)
+
+  try:
+    receipt = substrate.submit_extrinsic(extrinsic, wait_for_inclusion=True)
+    print("Extrinsic '{}' sent and included in block '{}'".format(receipt.extrinsic_hash, receipt.block_hash))
+
+  except SubstrateRequestException as e:
+    print("Failed to send: {}".format(e))
+
+#---------------------------------------------------------------------------------------------------------
+# Main program to wrap it all up 
+#---------------------------------------------------------------------------------------------------------
+for row_ix in range(row_start, row_end):
+  row  = Txs_ws.row_values(row_ix)
+  print(row)
+  ChainTag_ws   = row[1]
+  BlockNum_ws   = row[2]
+  BlockID_ws    = row[3]
+  BlockFinal_ws = row[4]
+  TxID_ws       = row[5]
+  Sender_ws     = row[6]
+  Amount_ws     = row[7].replace(",",".")
+  Receiver_ws   = row[8]
+  print(row_ix, ': ',row)
+  print('ChainTag_ws  : ',ChainTag_ws)
+  print('BlockNum_ws  : ',BlockNum_ws)
+  print('BlockID_ws   : ',BlockID_ws)  
+  print('BlockFinal_ws: ',BlockFinal_ws)
+  print('TxID_ws      : ',TxID_ws)
+  print('Sender_ws    : ',Sender_ws)
+  print('Amount_ws    : ',Amount_ws)
+  print('Receiver_ws  : ',Receiver_ws)
+  
+  verify_vechain_data()
+  check_WND_holding() 
+  create_Polkadot_tx()
+  
+  #Update column 'Processed' in Google sheets database
+  cells = 'J' + str(row_ix) + ':J' + str(row_ix)            
+  Txs_ws.update(cells,"YES")
