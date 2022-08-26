@@ -24,6 +24,46 @@ import requests
 import binascii
 import os
 
+#---------------------------------------------------------------------------------------------------------	
+#Connect to the Google sheet that serves as a database mockup
+#---------------------------------------------------------------------------------------------------------
+from pyasn1_modules.rfc5208 import Attributes
+from google.colab import auth
+auth.authenticate_user()
+
+import gspread
+from google.auth import default
+creds, _ = default()
+
+gc = gspread.authorize(creds)
+
+#-------------------------------------------------------------------------------------------------------------	
+# Open our new spreadsheet and add some data - create one yourself and get key from URL, then name a worksheet #Txs"
+#-------------------------------------------------------------------------------------------------------------	
+JUR_gs  = gc.open_by_key('1hkQnl4cyrk5ARC2onffz9UTBbfl-Nsu_Ul1O9tC1JWI')
+
+print(JUR_ws.spreadsheet.id)
+print(JUR_ws.spreadsheet.title)
+
+Info_ws = JUR_gs.worksheet("Info") 
+Txs_ws  = JUR_gs.worksheet("Txs")
+
+print(Info_ws)
+print(Txs_ws)
+
+Tx_received    = Info_ws.cell(3,2).value #NB: Row, column
+Tx_processed   = Info_ws.cell(4,2).value
+Tx_unprocessed = int(Tx_received) - int(Tx_processed)
+row_start      = int(Tx_processed) + 2
+row_end        = row_start + int(Tx_unprocessed)
+
+print('Tx_received   : ', Tx_received)
+print('Tx_processed  : ', Tx_processed)
+print('Tx_unprocessed: ', Tx_unprocessed)
+print('row_start     : ', row_start)
+print('row_end       : ', row_end)
+
+
 #---------------------------------------------------------------------------------------------------------
 #Initial environment setup
 #---------------------------------------------------------------------------------------------------------
@@ -181,3 +221,6 @@ for row_ix in range(row_start, row_end):
   #Update column 'Processed' in Google sheets database
   cells = 'J' + str(row_ix) + ':J' + str(row_ix)            
   Txs_ws.update(cells,"YES")
+  
+  
+  #TODO: Figure out how to add VeChain token holder wallet address to Polkadot transaction for hightened security
